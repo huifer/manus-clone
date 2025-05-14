@@ -39,7 +39,7 @@ node_modules/
 bower_components/
 jspm_packages/
 vendor/
-
+demo/
 # 忽略日志文件
 logs/
 *.log
