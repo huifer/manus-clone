@@ -1,12 +1,20 @@
 import os
+import sys
 from dotenv import load_dotenv
 from typing import List, Dict, Any
+from langchain_community.llms import Tongyi
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # LangChain 组件
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field # 使用 pydantic_v1 兼容 LangChain
+from pydantic import BaseModel, Field  
 from langchain.output_parsers import PydanticOutputParser
+from langchain.memory import ConversationBufferMemory
+from langchain.schema import messages_from_dict, messages_to_dict
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain.memory import ChatMessageHistory
+
 
 from llm.llm_generatory import get_llm_model
 
@@ -25,113 +33,80 @@ class TaskList(BaseModel):
     """A list of sub-tasks to accomplish a larger goal.""" 
     tasks: List[SubTask] = Field(description="A list of sub-tasks.")
 
-parser = PydanticOutputParser(pydantic_object=TaskList)
-
-llm = get_llm_model()
-
-system_prompt_template_str = """
-You are an expert task decomposition assistant.
-Your goal is to break down a user's request into a sequence of actionable sub-tasks.
-The output MUST be a JSON object strictly conforming to the provided schema.
-Each sub-task must have a unique 'task_id', a 'description', and a list of 'dependencies'.
-'dependencies' should be a list of 'task_id's that must be completed before this task can start.
-If a task has no dependencies, its 'dependencies' list should be empty ([]).
-Ensure task_ids are unique (e.g., t1, t2, t3...) and dependencies correctly reference existing task_ids.
-
-{system_prompt_addon}
+class PlannerLLM:
+    def __init__(self):
+        self.parser = PydanticOutputParser(pydantic_object=TaskList)
+        self.llm = Tongyi(
+           
+        )
+        self.system_prompt_template_str = """
+你是一名任务分解专家。首先要理解用户输入的任务意图，思考需要用到哪些领域知识或技能，然后再将任务拆解为一系列可执行的子任务，输出严格符合下方 schema 的 JSON 对象。
+每个子任务需包含唯一的 task_id、详细的 description，以及依赖的 dependencies（如无依赖则为 []）。
+task_id 必须唯一（如 t1, t2, t3...），dependencies 仅引用已存在的 task_id。
+请确保结构清晰、步骤合理、依赖关系准确。
 
 {format_instructions}
 """
+        self.human_prompt_template_str = "User Request: {input}"
+        self.prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(self.system_prompt_template_str),
+            HumanMessagePromptTemplate.from_template(self.human_prompt_template_str)
+        ])
+        # 初始化对话历史内存
+        self.memory = ChatMessageHistory()
+        # 使用 RunnableWithMessageHistory 包装 chain
+        self.chain = RunnableWithMessageHistory(
+            self.prompt | self.llm | self.parser,
+            lambda session_id: self.memory,
+            input_messages_key="input",
+        )
 
-human_prompt_template_str = "User Request: {input}"
+    def generate_subtasks(self, user_query: str) -> List[Dict[str, Any]]:
+        """
+        Generates a list of sub-tasks based on user query, supporting multi-turn conversation.
 
-prompt = ChatPromptTemplate.from_messages([
-    SystemMessagePromptTemplate.from_template(system_prompt_template_str),
-    HumanMessagePromptTemplate.from_template(human_prompt_template_str)
-])
+        Args:
+            user_query: The user's main task or question.
+            history: Optional. List of previous messages (dicts) for multi-turn context.
 
-# 5. 构建 LangChain Chain (LCEL - LangChain Expression Language)
-# 链式调用：Prompt -> LLM -> Parser
-chain = prompt | llm | parser
-
-# 6. 定义主函数来调用 Chain
-def generate_subtasks(user_query: str, system_prompt_addon: str) -> List[Dict[str, Any]]:
-    """
-    Generates a list of sub-tasks based on user query and system prompt.
-
-    Args:
-        user_query: The user's main task or question.
-        system_prompt_addon: Additional instructions for the system prompt.
-
-    Returns:
-        A list of dictionaries, where each dictionary represents a sub-task
-        conforming to the specified JSON structure.
-        Returns an empty list on failure.
-    """
-    try:
-        # 调用 chain 并传入所有需要的参数
-        # format_instructions 来自 parser
-        response_pydantic_object = chain.invoke({
-            "input": user_query,
-            "system_prompt_addon": system_prompt_addon,
-            "format_instructions": parser.get_format_instructions()
-        })
-
-        # response_pydantic_object 将会是 TaskList 类型的一个实例
-        # 我们需要将其转换为题目要求的 List[Dict]
-        # Pydantic 模型的 .dict() 方法可以将其转换为字典
-        return [task.dict() for task in response_pydantic_object.tasks]
-
-    except Exception as e:
-        print(f"Error generating subtasks: {e}")
-        # 可以根据需要添加更复杂的错误处理或重试逻辑
-        # 例如，如果 LLM 输出不是有效的 JSON，PydanticOutputParser 会抛出 OutputParserException
-        # 可以捕获这个异常并尝试修复或提示用户
-        return []
+        Returns:
+            A list of dictionaries, where each dictionary represents a sub-task
+            conforming to the specified JSON structure.
+            Returns an empty list on failure.
+        """
+        try:
+            response_pydantic_object = self.chain.invoke(
+                {
+                    "input": user_query,
+                    "format_instructions": self.parser.get_format_instructions()
+                },
+                config={"configurable": {"session_id": "default"}}
+            )
+            # 返回当前历史消息（可用于后续多轮）
+            self.latest_history = messages_to_dict(self.memory.chat_memory.messages)
+            return [task.dict() for task in response_pydantic_object.tasks]
+        except Exception as e:
+            print(f"Error generating subtasks: {e}")
+            return []
 
 # 7. 示例用法
 if __name__ == "__main__":
+    planner = PlannerLLM()
     # 示例1: 制作咖啡
     user_input_1 = "如何泡一杯好喝的拿铁咖啡？"
-    custom_system_prompt_1 = "请确保步骤清晰，并包含准备工具和材料的步骤。任务ID请使用 step1, step2... 的格式。"
 
     print(f"--- Decomposing task: {user_input_1} ---")
-    subtasks_1 = generate_subtasks(user_input_1, custom_system_prompt_1)
+    subtasks_1 = planner.generate_subtasks(user_input_1)
 
     if subtasks_1:
         import json
         print("Generated Subtasks (JSON):")
         print(json.dumps(subtasks_1, indent=4, ensure_ascii=False))
-    else:
-        print("Failed to generate subtasks for example 1.")
-
-    print("\n" + "="*50 + "\n")
-
-    # 示例2: 开发 Web 应用
-    user_input_2 = "我要写一个Python FastAPI的Web应用，包含用户认证和基本的CRUD操作。"
-    custom_system_prompt_2 = "重点考虑API端点的设计和数据库模型的初步规划。任务ID请使用 tsk_auth_01, tsk_db_01, tsk_crud_01... 的格式。"
-
-    print(f"--- Decomposing task: {user_input_2} ---")
-    subtasks_2 = generate_subtasks(user_input_2, custom_system_prompt_2)
-
-    if subtasks_2:
-        import json
+        # 多轮对话示例
+        user_input_2 = "如果我没有咖啡机怎么办？"
+        print(f"\n--- Follow-up: {user_input_2} ---")
+        subtasks_2 = planner.generate_subtasks(user_input_2)
         print("Generated Subtasks (JSON):")
         print(json.dumps(subtasks_2, indent=4, ensure_ascii=False))
     else:
-        print("Failed to generate subtasks for example 2.")
-
-    print("\n" + "="*50 + "\n")
-
-    # 示例3: 简单任务，无特定ID格式要求
-    user_input_3 = "计划一次周末东京两日游"
-    custom_system_prompt_3 = "主要景点包括浅草寺、东京塔和新宿御苑。考虑交通和餐饮。"
-    print(f"--- Decomposing task: {user_input_3} ---")
-    subtasks_3 = generate_subtasks(user_input_3, custom_system_prompt_3)
-
-    if subtasks_3:
-        import json
-        print("Generated Subtasks (JSON):")
-        print(json.dumps(subtasks_3, indent=4, ensure_ascii=False))
-    else:
-        print("Failed to generate subtasks for example 3.")
+        print("Failed to generate subtasks for example 1.")

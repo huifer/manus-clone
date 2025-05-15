@@ -1,0 +1,36 @@
+[
+    {
+        "task_id": "step1",
+        "description": "准备所需材料和工具：浓缩咖啡、牛奶、咖啡机、奶泡器、杯子。",
+        "dependencies": []
+    },
+    {
+        "task_id": "step2",
+        "description": "用咖啡机制作一份浓缩咖啡，倒入杯中。",
+        "dependencies": [
+            "step1"
+        ]
+    },
+    {
+        "task_id": "step3",
+        "description": "将牛奶倒入奶泡器中，制作细腻的奶泡。确保牛奶温度适中，不要过热。",
+        "dependencies": [
+            "step1"
+        ]
+    },
+    {
+        "task_id": "step4",
+        "description": "将打好的奶泡缓缓倒入装有浓缩咖啡的杯中，可以根据个人喜好调整比例。",
+        "dependencies": [
+            "step2",
+            "step3"
+        ]
+    },
+    {
+        "task_id": "step5",
+        "description": "如果喜欢，可以在拿铁表面撒上少量可可粉或肉桂粉进行装饰。",
+        "dependencies": [
+            "step4"
+        ]
+    }
+]
