@@ -13,6 +13,13 @@ class TaskStatus(Enum):
     COMPLETED = "completed"  # 已完成
     FAILED = "failed"  # 失败
 
+    def to_json(self):
+        return self.value
+
+    @staticmethod
+    def from_json(value):
+        return TaskStatus(value)
+
 
 # 子任务类，表示一个具体的子任务及其属性
 @dataclass
@@ -24,6 +31,29 @@ class SubTask:
     status: TaskStatus = TaskStatus.PENDING  # 子任务的当前状态
     input_params: Optional[Dict[str, Any]] = None  # 子任务的输入参数
     output: Optional[Any] = None  # 子任务的输出结果
+
+    def to_dict(self):
+        return {
+            "task_id": self.task_id,
+            "description": self.description,
+            "dependencies": self.dependencies,
+            "assigned_agent": self.assigned_agent,
+            "status": self.status.to_json(),
+            "input_params": self.input_params,
+            "output": self.output,
+        }
+
+    @staticmethod
+    def from_dict(data):
+        return SubTask(
+            task_id=data["task_id"],
+            description=data["description"],
+            dependencies=data["dependencies"],
+            assigned_agent=data.get("assigned_agent"),
+            status=TaskStatus.from_json(data["status"]),
+            input_params=data.get("input_params"),
+            output=data.get("output"),
+        )
 
 
 # 任务计划类，管理所有子任务及其状态
@@ -49,6 +79,16 @@ class TaskPlan:
         if task_id in self.tasks:
             self.tasks[task_id].status = status  # 更新子任务的状态
 
+    def to_dict(self):
+        return {
+            "tasks": {tid: task.to_dict() for tid, task in self.tasks.items()}
+        }
+
+    @staticmethod
+    def from_dict(data):
+        tasks = {tid: SubTask.from_dict(task_data) for tid, task_data in data["tasks"].items()}
+        return TaskPlan(tasks=tasks)
+
 
 # 中央信息池类，管理任务计划和执行结果
 class CentralInfoPool:
@@ -61,3 +101,16 @@ class CentralInfoPool:
 
     def get_result(self, task_id: str) -> Optional[Any]:
         return self.execution_results.get(task_id)  # 获取子任务的执行结果
+
+    def to_dict(self):
+        return {
+            "task_plan": self.task_plan.to_dict(),
+            "execution_results": self.execution_results,
+        }
+
+    @staticmethod
+    def from_dict(data):
+        cip = CentralInfoPool()
+        cip.task_plan = TaskPlan.from_dict(data["task_plan"])
+        cip.execution_results = data.get("execution_results", {})
+        return cip
