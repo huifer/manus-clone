@@ -33,14 +33,46 @@ def simulate_llm_intent(input_str):
     return response.content.strip()
 
 
+class WebSearchLoader:
+    """
+    互联网搜索与内容加载类
+    输入字符串，自动意图识别、搜索、抓取并切分网页内容
+    """
+
+    def __init__(self, input_str):
+        # 输入字符串
+        self.input_str = input_str
+        # 关键词
+        self.keywords = simulate_llm_intent(input_str)
+        # 搜索对象
+        self.search = DuckDuckGoSearchResults(output_format="list")
+        # 搜索结果
+        self.results = self.search.invoke(self.keywords)
+        # 提取URL
+        self.urls = [item["link"] for item in self.results if "link" in item]
+        # 网页加载器
+        self.loader = UnstructuredURLLoader(urls=self.urls)
+        # 加载网页内容
+        self.data = self.loader.load()
+        # 文本切分
+        self.all_splits = text_splitter().split_documents(self.data)
+
+    def get_splits(self):
+        """
+        获取切分后的文档内容
+        """
+        return self.all_splits
+
+    def get_urls(self):
+        """
+        获取搜索到的URL列表
+        """
+        return self.urls
+
+
 def search_urls_by_intent(input_str):
-    keywords = simulate_llm_intent(input_str)
-    search = DuckDuckGoSearchResults(output_format="list")
-    results = search.invoke(keywords)
-    urls = [item["link"] for item in results if "link" in item]
-    loader = UnstructuredURLLoader(urls=urls)
-    data = loader.load()
-    all_splits = text_splitter().split_documents(data)
+    loader = WebSearchLoader(input_str)
+    all_splits = loader.get_splits()
     vectorstore = Chroma.from_documents(
         documents=all_splits, embedding=get_embedding_model()
     )

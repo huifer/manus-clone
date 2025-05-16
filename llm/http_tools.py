@@ -6,16 +6,13 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
-from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain.llms import Ollama
+
+from llm.llm_factory import get_llm
 
 
 
-llm = ChatTongyi(
-    model="qwen-turbo",
-    dashscope_api_key=os.getenv("DASH_SCOPE_API_KEY"),
-    top_p=0.95,
-    temperature=0.7,
-)
+llm = get_llm()
 import requests
 from typing import Any, Dict, Optional
 from langchain_core.tools import BaseTool
