@@ -9,22 +9,15 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_models.tongyi import ChatTongyi
 
 
-# 初始化LLM，使用Gemini-2.0-flash
-# llm = ChatGoogleGenerativeAI(
-#     model="gemini-2.0-flash",
-#     temperature=0,
-#     max_tokens=None,
-#     timeout=None,
-#     max_retries=2,
-# )
+
 llm = ChatTongyi(
-        model="qwen-turbo",
-        dashscope_api_key=os.getenv("DASH_SCOPE_API_KEY"),
-        top_p=0.95,
-        temperature=0.7,
-    )
+    model="qwen-turbo",
+    dashscope_api_key=os.getenv("DASH_SCOPE_API_KEY"),
+    top_p=0.95,
+    temperature=0.7,
+)
 import requests
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from langchain.agents import AgentExecutor, create_react_agent
@@ -83,9 +76,11 @@ class DynamicHTTPTool(BaseTool):
     description: str
     api_info: dict
 
-    def _run(self, param: Optional[Union[int, str]] = None,
-):
-        # MOCK: 根据接口名称返回模拟数据
+    def _run(
+        self,
+        param: Optional[Union[int, Dict]] = None,
+    ):
+        print(param)
         if self.api_info["name"] == "userinfo":
             # 模拟返回用户基本信息
             return {
@@ -100,7 +95,7 @@ class DynamicHTTPTool(BaseTool):
         elif self.api_info["name"] == "UserPage":
             # 模拟返回分页用户信息
             page = param
-            size =param
+            size = param
             return {
                 "page": page,
                 "size": size,
@@ -126,22 +121,27 @@ http_tools = [
 
 # 工具选择工具：让 LLM 选择合适的接口
 class SwaggerSelectorTool(BaseTool):
-    name: str = "Swagger接口选择器" 
-    description: str = "根据用户意图选择最合适的Swagger接口" 
+    name: str = "Swagger接口选择器"
+    description: str = "根据用户意图选择最合适的Swagger接口"
 
     def _run(self, query: str):
-        # 简单实现：根据描述关键字匹配
+        # 直接在swagger_apis中搜索最匹配的接口，返回接口名和参数列表
+        # 简单关键字匹配（可根据实际需求优化匹配逻辑）
+        best_api = None
         for api in swagger_apis:
-            if "用户ID" in query or "基本信息" in query:
-                if api["name"] == "userinfo":
-                    return api["name"]
-            if "列表" in query:
-                if api["name"] == "userList":
-                    return api["name"]
-            if "分页" in query:
-                if api["name"] == "UserPage":
-                    return api["name"]
-        return "未找到合适的接口"
+            if api["name"].lower() in query.lower() or api["description"][:6] in query:
+                best_api = api
+                break
+        if not best_api:
+            # 没有匹配到，返回空
+            return '{"name": "", "params": {}}'
+        # 构造参数字典，参数值为空字符串
+        params_dict = {param: "" for param in best_api["params"]}
+        import json
+
+        return json.dumps(
+            {"name": best_api["name"], "params": params_dict}, ensure_ascii=False
+        )
 
     def _arun(self, query: str):
         raise NotImplementedError("该工具不支持异步")
@@ -169,5 +169,5 @@ agent = initialize_agent(
 )
 
 # 示例：用户输入
-v = agent("我要查询用户ID是1的基本信息")
+v = agent("我要看第3页的用户数据,每页10条")
 print(v)
