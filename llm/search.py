@@ -10,6 +10,9 @@ from langchain_community.embeddings import FakeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models.tongyi import ChatTongyi
+import re
+
+from llm.llm_factory import get_llm
 
 
 def get_embedding_model():
@@ -20,17 +23,24 @@ def text_splitter():
     return RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=300)
 
 
-def simulate_llm_intent(input_str):
 
-    llm = ChatTongyi(
-        model="qwen-turbo",
-        dashscope_api_key=os.getenv("DASH_SCOPE_API_KEY"),
-        top_p=0.95,
-        temperature=0.7,
-    )
+def simulate_llm_intent(input_str):
+    llm = get_llm()
+    
     prompt = f"请根据以下用户输入内容，提取最适合互联网搜索的关键词和相关搜索词。请优先考虑用户搜索习惯、搜索意图和常用表达，目标是生成一套有助于精准定位信息的、简明相关的关键词。只返回关键词列表，用空格分隔，不要任何引导语或解释。用户输入：{input_str}"
     response = llm.invoke(prompt)
-    return response.content.strip()
+    
+    # 判断 response 是否是字符串
+    if isinstance(response, str):
+        content = response.strip()
+    else:
+        content = response.content.strip()
+
+    # 删除 <think>...</think> 标签及其中内容
+    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+    content = re.sub(r'\s+', ' ', content)  # 可选：去除多余空格
+    
+    return content
 
 
 class WebSearchLoader:
@@ -104,12 +114,7 @@ def search_urls_by_intent(input_str):
 文档内容如下：
 {docs}"""
     )
-    llm = ChatTongyi(
-        model="qwen-turbo",
-        dashscope_api_key=os.getenv("DASH_SCOPE_API_KEY"),
-        top_p=0.46,
-        temperature=0.2,
-    )
+    llm = get_llm()
 
     chain = {"docs": format_docs} | prompt | llm | StrOutputParser()
 

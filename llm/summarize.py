@@ -6,7 +6,7 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
-
+import re
 from llm.llm_factory import get_llm
 from llm.search import WebSearchLoader
 
@@ -39,18 +39,27 @@ class SummarizeAgent:
             return ""
 
     def _summarize_chunks(self, chunks, style):
-        # 对分段文本进行总结
         summaries = []
         for chunk in chunks:
             prompt = f"请用中文以{style}风格总结以下内容：\n{chunk}"
             if self.use_search:
                 prompt += self._search_enhance(chunk[:100])
             resp = self.llm.invoke(prompt)
-            # 兼容不同llm返回格式
-            if hasattr(resp, "content"):
-                summaries.append(resp.content)
+
+            # 获取内容并清理 <think> 标签
+            if isinstance(resp, str):
+                content = resp.strip()
+            elif hasattr(resp, "content"):
+                content = resp.content.strip()
             else:
-                summaries.append(str(resp))
+                content = str(resp).strip()
+
+            # 清除 <think> 标签及内容
+            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+            content = re.sub(r'\s+', ' ', content)  # 可选：压缩多余空格
+
+            summaries.append(content)
+        
         return summaries
 
     def summarize(self, text=None, all_splits=None, style=None):
