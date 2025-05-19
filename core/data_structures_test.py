@@ -1,4 +1,5 @@
 from core.data_structures import SubTask, TaskStatus, TaskPlan, CentralInfoPool
+import json
 
 
 def main():
@@ -10,6 +11,7 @@ def main():
     plan.add_task(subtask2)
 
     print("任务列表：", list(plan.tasks.keys()))
+    print("任务列表(JSON)：", json.dumps([t.to_dict() for t in plan.tasks.values()], ensure_ascii=False))
     print("t1描述：", plan.tasks["t1"].description)
 
     # 获取可执行任务
